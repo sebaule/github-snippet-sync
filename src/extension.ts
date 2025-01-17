@@ -1,175 +1,103 @@
 import * as vscode from 'vscode';
-import * as https from 'https';
+import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
+let syncInterval: NodeJS.Timeout | undefined;
+
 export function activate(context: vscode.ExtensionContext) {
-    console.log('L\'extension GitHub Snippet Sync est maintenant active');
-    vscode.window.showInformationMessage('L\'extension GitHub Snippet Sync est maintenant active');
+    console.log('Extension de synchronisation de snippets activée');
 
-    console.log(`Chemin complet des snippets VS Code : ${getUserSnippetsPath()}`);
-
-    let disposable = vscode.commands.registerCommand('extension.syncGitHubSnippets', async () => {
-        const config = vscode.workspace.getConfiguration('githubSnippetSync');
-        let repository = config.get('repositoryUrl') as string;
-        let snippetsFolder = config.get('snippetsFolder') as string;
-        let branch = config.get('branch') as string;
-        let authMethod = config.get('authMethod') as string;
-
-        if (!repository || !snippetsFolder || !branch) {
-            repository = await vscode.window.showInputBox({ prompt: 'Entrez l\'URL du dépôt GitHub' }) || '';
-            snippetsFolder = await vscode.window.showInputBox({ prompt: 'Entrez le dossier des snippets (par défaut: snippets)', value: 'snippets' }) || 'snippets';
-            branch = await vscode.window.showInputBox({ prompt: 'Entrez la branche (par défaut: main)', value: 'main' }) || 'main';
-
-            await config.update('repositoryUrl', repository, vscode.ConfigurationTarget.Global);
-            await config.update('snippetsFolder', snippetsFolder, vscode.ConfigurationTarget.Global);
-            await config.update('branch', branch, vscode.ConfigurationTarget.Global);
-        }
-
-        if (!authMethod) {
-            authMethod = await vscode.window.showQuickPick(['token', 'password'], { placeHolder: 'Choisissez la méthode d\'authentification' }) || 'token';
-            await config.update('authMethod', authMethod, vscode.ConfigurationTarget.Global);
-        }
-
-        let token = '';
-        let username = '';
-        let password = '';
-
-        if (authMethod === 'token') {
-            token = config.get('token') as string;
-            if (!token) {
-                token = await vscode.window.showInputBox({ prompt: 'Entrez votre token d\'accès personnel GitHub', password: true }) || '';
-                await config.update('token', token, vscode.ConfigurationTarget.Global);
-            }
-        } else {
-            username = config.get('username') as string;
-            password = config.get('password') as string;
-            if (!username || !password) {
-                username = await vscode.window.showInputBox({ prompt: 'Entrez votre nom d\'utilisateur GitHub' }) || '';
-                password = await vscode.window.showInputBox({ prompt: 'Entrez votre mot de passe GitHub', password: true }) || '';
-                await config.update('username', username, vscode.ConfigurationTarget.Global);
-                await config.update('password', password, vscode.ConfigurationTarget.Global);
-            }
-        }
-
-        try {
-            await syncSnippets(repository, snippetsFolder, branch, authMethod, token, username, password);
-            vscode.window.showInformationMessage('Snippets synchronisés avec succès !');
-        } catch (error: unknown) {
-            console.error('Erreur détaillée :', error);
-            if (error instanceof Error) {
-                vscode.window.showErrorMessage(`Erreur lors de la synchronisation des snippets : ${error.message}`);
-            } else {
-                vscode.window.showErrorMessage(`Une erreur inattendue s'est produite lors de la synchronisation des snippets.`);
-            }
-        }
+    let disposable = vscode.commands.registerCommand('extension.syncLocalSnippets', () => {
+        syncSnippets();
     });
 
     context.subscriptions.push(disposable);
+
+    // Démarrer la synchronisation périodique
+    startPeriodicSync();
 }
 
-async function syncSnippets(repository: string, snippetsFolder: string, branch: string, authMethod: string, token: string, username: string, password: string) {
-    console.log('Début de la synchronisation des snippets');
+function startPeriodicSync() {
+    const config = vscode.workspace.getConfiguration('localSnippetSync');
+    const intervalMinutes = config.get('syncIntervalMinutes', 30);
 
-    const [owner, repo] = repository.split('/').slice(-2);
-    const snippetsUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${snippetsFolder}?ref=${branch}`;
-    console.log(`URL de l'API GitHub : ${snippetsUrl}`);
+    syncInterval = setInterval(syncSnippets, intervalMinutes * 60 * 1000);
+}
 
-    const response = authMethod === 'token' ? await fetchGitHubContents(snippetsUrl, token) : await fetchGitHubContentsWithPassword(snippetsUrl, username, password);
-    
-    console.log('Réponse de l\'API GitHub :', JSON.stringify(response, null, 2));
+async function syncSnippets() {
+    const config = vscode.workspace.getConfiguration('localSnippetSync');
+    const sourceFilePath = config.get('sourceFilePath', '');
 
-    if (response.message === "Not Found") {
-        throw new Error(`Le dépôt ou le dossier spécifié n'existe pas. Vérifiez l'URL et vos permissions.`);
+    if (!sourceFilePath) {
+        vscode.window.showErrorMessage('Chemin du fichier source non configuré');
+        return;
     }
 
-    const files = Array.isArray(response) ? response : [response];
+    console.log(`Tentative de lecture du fichier : ${path.resolve(sourceFilePath)}`);
 
-    if (!files || files.length === 0) {
-        console.log('Aucun fichier trouvé dans le répertoire spécifié');
-        throw new Error('Aucun fichier trouvé dans le répertoire spécifié');
-    }
+    try {
+        const stats = await fs.promises.stat(sourceFilePath);
+        if (stats.isDirectory()) {
+            vscode.window.showErrorMessage(`Le chemin spécifié est un répertoire, pas un fichier : ${sourceFilePath}`);
+            console.log(`c'est bon, c'est un répertoire ! `);
+            return;
+        }
 
-    console.log(`Nombre de fichiers trouvés : ${files.length}`);
+        if (!stats.isFile()) {
+            vscode.window.showErrorMessage(`Le chemin spécifié n'est ni un fichier ni un répertoire : ${sourceFilePath}`);
+            console.log(`Aie ! C'est un fichier ! `);
+            return;
+        }
 
-    for (const file of files) {
-        if (file.type === 'file' && file.name.endsWith('.json')) {
-            console.log(`Traitement du fichier : ${file.name}`);
-            const content = await fetchGitHubFile(file.download_url, authMethod, token, username, password);
-            console.log(`Contenu du fichier ${file.name} :`, content);
-            const snippets = JSON.parse(content);
-            await importSnippets(file.name, snippets);
+        const sourceContent = await fs.promises.readFile(sourceFilePath, 'utf8');
+        const snippets = JSON.parse(sourceContent);
+        await importSnippets(snippets);
+        vscode.window.showInformationMessage('Snippets synchronisés avec succès');
+    } catch (error) {
+        if (error instanceof Error) {
+            vscode.window.showErrorMessage(`Erreur lors de la synchronisation : ${error.message}`);
+            console.error('Erreur détaillée:', error);
+        } else {
+            vscode.window.showErrorMessage(`Une erreur inattendue s'est produite lors de la synchronisation`);
         }
     }
 }
 
-function fetchGitHubContents(url: string, token: string): Promise<any> {
-    return new Promise((resolve, reject) => {
-        const options = {
-            headers: {
-                'User-Agent': 'VS Code GitHub Snippet Sync',
-                'Authorization': `token ${token}`
-            }
-        };
-
-        https.get(url, options, (res) => {
-            let data = '';
-            res.on('data', (chunk) => data += chunk);
-            res.on('end', () => {
-                console.log('Données récupérées depuis GitHub :', data);
-                resolve(JSON.parse(data));
-            });
-        }).on('error', reject);
-    });
-}
-
-function fetchGitHubContentsWithPassword(url: string, username: string, password: string): Promise<any> {
-    return new Promise((resolve, reject) => {
-        const options = {
-            headers: {
-                'User-Agent': 'VS Code GitHub Snippet Sync',
-                'Authorization': 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64')
-            }
-        };
-
-        https.get(url, options, (res) => {
-            let data = '';
-            res.on('data', (chunk) => data += chunk);
-            res.on('end', () => {
-                console.log('Données récupérées depuis GitHub :', data);
-                resolve(JSON.parse(data));
-            });
-        }).on('error', reject);
-    });
-}
-
-function fetchGitHubFile(url: string, authMethod: string, token: string, username: string, password: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-        const options = {
-            headers: {
-                'User-Agent': 'VS Code GitHub Snippet Sync',
-                ...(authMethod === 'token' ? { 'Authorization': `token ${token}` } : { 'Authorization': 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64') })
-            }
-        };
-
-        https.get(url, options, (res) => {
-            let data = '';
-            res.on('data', (chunk) => data += chunk);
-            res.on('end', () => resolve(data));
-        }).on('error', reject);
-    });
-}
-
-async function importSnippets(fileName: string, snippets: any) {
-    const snippetFile = path.join(getUserSnippetsPath(), fileName);
-    console.log(`Chemin du fichier de snippets : ${snippetFile}`);
+async function importSnippets(snippets: Record<string, any>) {
+    const snippetsPath = getUserSnippetsPath();
     console.log(`Contenu des snippets à importer :`, JSON.stringify(snippets, null, 2));
 
-    try {
-        await vscode.workspace.fs.writeFile(vscode.Uri.file(snippetFile), Buffer.from(JSON.stringify(snippets, null, 2)));
-        console.log(`Snippets importés avec succès : ${fileName}`);
-    } catch (error) {
-        console.error(`Erreur lors de l'importation des snippets ${fileName}:`, error);
+    for (const [language, languageSnippets] of Object.entries(snippets)) {
+        const snippetFile = path.join(snippetsPath, `${language}.json`);
+        console.log(`Importation des snippets pour ${language} dans : ${snippetFile}`);
+
+        try {
+            // Vérifier si le répertoire des snippets existe, sinon le créer
+            await fs.promises.mkdir(path.dirname(snippetFile), { recursive: true });
+
+            // Lire le fichier existant s'il existe
+            let existingSnippets: Record<string, any> = {};
+            try {
+                const existingContent = await fs.promises.readFile(snippetFile, 'utf8');
+                existingSnippets = JSON.parse(existingContent);
+            } catch (error) {
+                // Le fichier n'existe pas encore, on utilise un objet vide
+            }
+
+            // Fusionner les nouveaux snippets avec les existants
+            const mergedSnippets = { ...existingSnippets, ...languageSnippets };
+
+            // Écrire les snippets fusionnés dans le fichier
+            await fs.promises.writeFile(snippetFile, JSON.stringify(mergedSnippets, null, 2));
+            console.log(`Snippets importés avec succès pour : ${language}`);
+        } catch (error) {
+            if (error instanceof Error) {
+                console.error(`Erreur lors de l'importation des snippets pour ${language}: ${error.message}`);
+            } else {
+                console.error(`Une erreur inattendue s'est produite lors de l'importation des snippets pour ${language}`);
+            }
+        }
     }
 }
 
@@ -184,4 +112,8 @@ function getUserSnippetsPath(): string {
     }
 }
 
-export function deactivate() {}
+export function deactivate() {
+    if (syncInterval) {
+        clearInterval(syncInterval);
+    }
+}

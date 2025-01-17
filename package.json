@@ -2,11 +2,11 @@
     "name": "github-snippet-sync",
     "displayName": "GitHub Snippet Sync",
     "description": "Synchronize snippets from a GitHub repository",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "publisher": "Baule",
     "repository": {
         "type": "git",
-        "url": ""
+        "url": "https://github.com/votre-nom-utilisateur/github-snippet-sync.git"
     },
     "engines": {
         "vscode": "^1.60.0"
@@ -19,54 +19,27 @@
     ],
     "main": "./out/extension.js",
     "contributes": {
-        "commands": [
-            {
-                "command": "extension.syncGitHubSnippets",
-                "title": "Sync Snippets from GitHub"
-            }
-        ],
         "configuration": {
-            "title": "GitHub Snippet Sync",
+            "title": "Local Snippet Sync",
             "properties": {
-                "githubSnippetSync.repositoryUrl": {
-                "type": "string",
-                "default": "",
-                "description": "URL du dépôt GitHub (ex: https://github.com/user/repo.git)"
+                "localSnippetSync.sourceFilePath": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Chemin vers le fichier source de snippets"
                 },
-                "githubSnippetSync.snippetsFolder": {
-                "type": "string",
-                "default": "Snippets",
-                "description": "Chemin du dossier contenant les snippets dans le dépôt"
-                },
-                "githubSnippetSync.authMethod": {
-                "type": "string",
-                "enum": ["token", "password"],
-                "default": "token",
-                "description": "Méthode d'authentification (token ou mot de passe)"
-                },
-                "githubSnippetSync.token": {
-                "type": "string",
-                "default": "",
-                "description": "Token d'accès personnel GitHub"
-                },
-                "githubSnippetSync.username": {
-                "type": "string",
-                "default": "",
-                "description": "Nom d'utilisateur GitHub (pour l'authentification par mot de passe)"
-                },
-                "githubSnippetSync.branch": {
-                "type": "string",
-                "default": "",
-                "description": "nom de la branch où récupérer les fichiers"
-                },
-                "githubSnippetSync.password": {
-                "type": "string",
-                "default": "",
-                "description": "Mot de passe GitHub (pour l'authentification par mot de passe)"
+                "localSnippetSync.syncIntervalMinutes": {
+                    "type": "number",
+                    "default": 30,
+                    "description": "Intervalle de synchronisation en minutes"
                 }
             }
-        }
-
+        },
+        "commands": [
+            {
+                "command": "extension.syncLocalSnippets",
+                "title": "Synchroniser les snippets locaux"
+            }
+        ]
     },
     "scripts": {
         "vscode:prepublish": "npm run compile",

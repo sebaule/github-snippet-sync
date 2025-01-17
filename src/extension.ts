@@ -6,27 +6,28 @@ import * as os from 'os';
 let syncInterval: NodeJS.Timeout | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
-    console.log('Extension de synchronisation de snippets activée');
+    console.log('Extension Snippets Sync activée');
 
     let disposable = vscode.commands.registerCommand('extension.syncLocalSnippets', () => {
+        console.log('Commande de synchronisation manuelle déclenchée');
         syncSnippets();
     });
 
     context.subscriptions.push(disposable);
 
-    // Démarrer la synchronisation périodique
     startPeriodicSync();
 }
 
 function startPeriodicSync() {
-    const config = vscode.workspace.getConfiguration('localSnippetSync');
+    const config = vscode.workspace.getConfiguration('snippetsSync');
     const intervalMinutes = config.get('syncIntervalMinutes', 30);
-
+    console.log(`Configuration de la synchronisation périodique toutes les ${intervalMinutes} minutes`);
     syncInterval = setInterval(syncSnippets, intervalMinutes * 60 * 1000);
 }
 
 async function syncSnippets() {
-    const config = vscode.workspace.getConfiguration('localSnippetSync');
+    console.log('Début de la synchronisation des snippets');
+    const config = vscode.workspace.getConfiguration('snippetsSync');
     const sourceFilePath = config.get('sourceFilePath', '');
 
     if (!sourceFilePath) {
@@ -40,13 +41,13 @@ async function syncSnippets() {
         const stats = await fs.promises.stat(sourceFilePath);
         if (stats.isDirectory()) {
             vscode.window.showErrorMessage(`Le chemin spécifié est un répertoire, pas un fichier : ${sourceFilePath}`);
-            console.log(`c'est bon, c'est un répertoire ! `);
+            console.log(`Erreur : Le chemin spécifié est un répertoire`);
             return;
         }
 
         if (!stats.isFile()) {
-            vscode.window.showErrorMessage(`Le chemin spécifié n'est ni un fichier ni un répertoire : ${sourceFilePath}`);
-            console.log(`Aie ! C'est un fichier ! `);
+            vscode.window.showErrorMessage(`Le chemin spécifié n'est pas un fichier valide : ${sourceFilePath}`);
+            console.log(`Erreur : Le chemin spécifié n'est pas un fichier valide`);
             return;
         }
 
@@ -73,10 +74,8 @@ async function importSnippets(snippets: Record<string, any>) {
         console.log(`Importation des snippets pour ${language} dans : ${snippetFile}`);
 
         try {
-            // Vérifier si le répertoire des snippets existe, sinon le créer
             await fs.promises.mkdir(path.dirname(snippetFile), { recursive: true });
 
-            // Lire le fichier existant s'il existe
             let existingSnippets: Record<string, any> = {};
             try {
                 const existingContent = await fs.promises.readFile(snippetFile, 'utf8');
@@ -85,10 +84,8 @@ async function importSnippets(snippets: Record<string, any>) {
                 // Le fichier n'existe pas encore, on utilise un objet vide
             }
 
-            // Fusionner les nouveaux snippets avec les existants
             const mergedSnippets = { ...existingSnippets, ...languageSnippets };
 
-            // Écrire les snippets fusionnés dans le fichier
             await fs.promises.writeFile(snippetFile, JSON.stringify(mergedSnippets, null, 2));
             console.log(`Snippets importés avec succès pour : ${language}`);
         } catch (error) {

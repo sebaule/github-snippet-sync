@@ -1,6 +1,6 @@
 #!/bin/bash
 
-EXTENSION_NAME="github-snippet-sync-0.0.1.vsix"
+EXTENSION_NAME="Snippets-sync-1.0.0.vsix"
 
 # Vérifier si le fichier .vsix existe
 if [ ! -f "$EXTENSION_NAME" ]; then

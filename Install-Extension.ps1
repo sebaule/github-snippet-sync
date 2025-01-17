@@ -1,4 +1,4 @@
-$EXTENSION_NAME = "github-snippet-sync-0.0.2.vsix"
+$EXTENSION_NAME = "Snippets-sync-1.0.0.vsix"
 
 # Vérifier si le fichier .vsix existe
 if (-not (Test-Path $EXTENSION_NAME)) {
